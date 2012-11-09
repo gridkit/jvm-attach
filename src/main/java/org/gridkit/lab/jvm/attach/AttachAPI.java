@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 public class AttachAPI {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AttachManager.class);
+    private static boolean started;
 	
     static {
         try {
@@ -21,14 +22,22 @@ public class AttachAPI {
             method.setAccessible(true);
             
             URLClassLoader sysloader = (URLClassLoader)ClassLoader.getSystemClassLoader();
-            method.invoke(sysloader, (Object) new URL(toolsJarURL));
+            if (sysloader.getResourceAsStream("/com/sun/tools/attach/VirtualMachine.class") == null) {
+            	method.invoke(sysloader, (Object) new URL(toolsJarURL));
+	            Thread.currentThread().getContextClassLoader().loadClass("com.sun.tools.attach.VirtualMachine");
+	            Thread.currentThread().getContextClassLoader().loadClass("com.sun.tools.attach.AttachNotSupportedException");
+            }
+            
         } catch (Exception e) {
-        	LOGGER.error("Failed to add tools.jar to classpath", e);
         	LOGGER.error("Java home points to " + System.getProperty("java.home") + " make sure it is not a JRE path");
+        	LOGGER.error("Failed to add tools.jar to classpath", e);
         }
-    }
+        started = true;
+    };
 	
 	public static void ensureToolsJar() {
-		// do nothing
+		if (!started) {
+			System.err.println("Attach API not initialized");
+		}
 	}	
 }
