@@ -37,15 +37,14 @@ public class AttachManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AttachManager.class);
 
-    static {
-    	AttachAPI.ensureToolsJar();
-    }
-    
     private static long ATTACH_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(500);
     private static long VM_LIST_EXPIRY = TimeUnit.SECONDS.toNanos(1);
     private static long VM_PROPS_EXPIRY = TimeUnit.SECONDS.toNanos(1);
     private static long VM_MBEAN_SERVER_EXPIRY = TimeUnit.SECONDS.toNanos(30);
 
+    static {
+    	AttachAPI.ensureToolsJar();
+    }
     
     private static AttachManagerInt INSTANCE = new AttachManagerInt();
     
