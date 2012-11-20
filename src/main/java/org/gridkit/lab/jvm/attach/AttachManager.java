@@ -185,15 +185,20 @@ public class AttachManager {
 			return mbh.value;
 		}
 	
-		synchronized Properties internalGetSystemProperties(long pid) {
+		Properties internalGetSystemProperties(long pid) {
 			
-			Expirable<Properties> proph = vmPropsCache.get(pid);
+			Expirable<Properties> proph;
+			synchronized(this) {
+				proph = vmPropsCache.get(pid);
+			}
 			if (proph == null || proph.expiryDeadline < System.nanoTime()) {
 				Properties props = getSysProps(pid);
 				proph = new Expirable<Properties>(System.nanoTime() + VM_PROPS_EXPIRY, props);
-				vmPropsCache.put(pid, proph);
+				synchronized(this) {
+					vmPropsCache.put(pid, proph);
+				}
 			}
-			
+				
 			return proph.value;
 		}
 	
@@ -231,9 +236,12 @@ public class AttachManager {
 			}
 		}
 	
-		private Properties getSysProps(long pid) {		
+		private Properties getSysProps(long pid) {
+			String threadName = Thread.currentThread().getName();
+			Thread.currentThread().setName(threadName + " getSysProps(" + pid + ")");		
 			VirtualMachine lvm = null;
 			try {
+				// TODO time out
 				lvm = attach(String.valueOf(pid));
 				return lvm.getSystemProperties();
 			} catch (AttachNotSupportedException e) {
@@ -251,6 +259,7 @@ public class AttachManager {
 						// ignore
 					}
 				}
+				Thread.currentThread().setName(threadName);
 			}
 		}
 	
