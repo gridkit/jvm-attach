@@ -18,6 +18,7 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import javax.management.MBeanServerConnection;
 import javax.management.remote.JMXConnector;
@@ -91,7 +92,8 @@ public class AttachManager {
 	    
 	    private Map<Long, Expirable<Properties>> vmPropsCache = new HashMap<Long, Expirable<Properties>>();            
 	    private Map<Long, Expirable<MBeanServerConnection>> vmMBeanCache = new HashMap<Long, Expirable<MBeanServerConnection>>();
-	
+	    
+	    private Map<Long, AttachRequest> attachQueue = new HashMap<Long, AttachRequest>();
 	    
 	    JavaProcessDetails internalGetDetails(long pid) {
 	    	String name = getProcesssName(pid);
@@ -203,66 +205,54 @@ public class AttachManager {
 		}
 	
 		private MBeanServerConnection getMBeanServer(long pid) {
-			VirtualMachine lvm = null;
 			try {
-				lvm = attach(String.valueOf(pid));
-				String uri = attachManagementAgent(lvm);
+				String uri;
+				try {
+					uri = attachAndPerform(pid, new GetManagementAgent(), ATTACH_TIMEOUT);
+				} catch (InterruptedException e) {
+					LOGGER.warn("Cannot connect to JVM (" + pid + ") - interrupted");
+					return null;
+				} catch (ExecutionException e) {
+					Throwable cause = e.getCause();
+					if (cause instanceof AgentLoadException || cause instanceof AgentInitializationException) {
+						LOGGER.debug("Cannot connect to JVM (" + pid + "). Agent error: " + e.toString());
+						return null;
+					}
+					else {
+						LOGGER.debug("Cannot connect to JVM (" + pid + ") - " + e.toString());
+						return null;
+					}
+				} catch (TimeoutException e) {
+					LOGGER.debug("Cannot connect to JVM (" + pid + ") - timeout");
+					return null;
+				}
 	    		JMXServiceURL jmxurl = new JMXServiceURL(uri);
 	    		JMXConnector conn = JMXConnectorFactory.connect(jmxurl);
 	    		MBeanServerConnection mserver = conn.getMBeanServerConnection();
 	    		return mserver;
 				
-			} catch (AttachNotSupportedException e) {
-				LOGGER.debug("Attach to (" + pid + ") has failed", e);
+			} catch (Exception e) {
+				LOGGER.debug("Cannot connect to JVM (" + pid + ") - " + e.toString());
 				return null;
-			} catch (IOException e) {
-				LOGGER.debug("Attach to (" + pid + ") has failed", e);
-				return null;
-			} catch (AgentLoadException e) {
-				LOGGER.debug("Agent error at (" + pid + ")", e);
-				return null;
-			} catch (AgentInitializationException e) {
-				LOGGER.debug("Agent error at (" + pid + ")", e);
-				return null;
-			}
-			finally {
-				if (lvm != null) {
-					try {
-						lvm.detach();
-					} catch (Exception e) {
-						// ignore
-					}
-				}
 			}
 		}
 	
 		private Properties getSysProps(long pid) {
-			String threadName = Thread.currentThread().getName();
-			Thread.currentThread().setName(threadName + " getSysProps(" + pid + ")");		
-			VirtualMachine lvm = null;
 			try {
-				// TODO time out
-				lvm = attach(String.valueOf(pid));
-				return lvm.getSystemProperties();
-			} catch (AttachNotSupportedException e) {
-				LOGGER.debug("Attach to (" + pid + ") has failed", e);
+				return attachAndPerform(pid, new GetVmSysProps(), ATTACH_TIMEOUT);
+			} catch (InterruptedException e) {
+				LOGGER.warn("Failed to read system properties, JVM pid: " + pid + ", interrupted");
 				return new Properties();
-			} catch (IOException e) {
-				LOGGER.debug("Attach to (" + pid + ") has failed", e);
+			} catch (ExecutionException e) {
+				LOGGER.info("Failed to read system properties, JVM pid: " + pid + ", error: " + e.getCause().toString());
 				return new Properties();
-			}
-			finally {
-				if (lvm != null) {
-					try {
-						lvm.detach();
-					} catch (Exception e) {
-						// ignore
-					}
-				}
-				Thread.currentThread().setName(threadName);
+			} catch (TimeoutException e) {
+				LOGGER.info("Failed to read system properties, JVM pid: " + pid + ", read timeout");
+				return new Properties();
 			}
 		}
 	
+		@SuppressWarnings("unused")
 		private static String attachManagementAgent(VirtualMachine vm) throws IOException, AgentLoadException, AgentInitializationException
 		{
 	     	Properties localProperties = vm.getAgentProperties();
@@ -290,7 +280,40 @@ public class AttachManager {
 	     	return ((String)localProperties.get("com.sun.management.jmxremote.localConnectorAddress"));
 	   	}
 		
-		private static VirtualMachine attach(final String id)	throws AttachNotSupportedException, IOException {
+		private <V> V attachAndPerform(long pid, VMAction<V> action, long timeout) throws InterruptedException, ExecutionException, TimeoutException {
+			VMTask<V> task = new VMTask<V>(action);
+			boolean spawnThread = false;
+			AttachRequest ar;
+			synchronized(attachQueue) {
+				ar = attachQueue.get(pid);
+				if (ar != null) {
+					ar.tasks.add(task);
+				}
+				else {
+					ar = new AttachRequest(pid);
+					ar.tasks.add(task);
+					spawnThread = true;
+					attachQueue.put(pid, ar);
+				}				
+			}
+			if (spawnThread) {
+				Thread attacher = new Thread(ar);
+				attacher.setName("AttachToJVM-" + pid);
+				attacher.setDaemon(true);
+				attacher.start();				
+			}
+
+			try {
+				V result = task.box.get(timeout, TimeUnit.MILLISECONDS);
+				return result;
+			}
+			finally {
+				task.box.cancel(false);
+			}
+		}
+		
+		@SuppressWarnings("unused")
+		private static VirtualMachine attachToJvm(final String id)	throws AttachNotSupportedException, IOException {
 			FutureTask<VirtualMachine> vmf = new FutureTask<VirtualMachine>(new Callable<VirtualMachine>() {
 				@Override
 				public VirtualMachine call() throws Exception {
@@ -298,6 +321,7 @@ public class AttachManager {
 				}
 			});
 			Thread attacher = new Thread(vmf);
+			attacher.setName("AttachManager::attachToJvm(" + id + ")");
 			attacher.setDaemon(true);
 			attacher.start();
 			try {
@@ -316,7 +340,44 @@ public class AttachManager {
 				throw er;
 			}
 		}    
-	
+
+		@SuppressWarnings("unused")
+		private static Properties getSysPropsAsync(final String id) {
+			FutureTask<Properties> vmf = new FutureTask<Properties>(new Callable<Properties>() {
+				@Override
+				public Properties call() throws Exception {
+					VirtualMachine vm = null;
+					try {
+						vm = VirtualMachine.attach(id);
+						return vm.getSystemProperties();
+					} finally {
+						if (vm != null) {
+							vm.detach();
+						}
+					}
+				}
+			});
+			Thread attacher = new Thread(vmf);
+			attacher.setName("AttachManager::getSysPropsAsync(" + id + ")");
+			attacher.setDaemon(true);
+			attacher.start();
+			try {
+				return vmf.get(ATTACH_TIMEOUT, TimeUnit.NANOSECONDS);
+			} catch (Exception e) {
+				Throwable x = e;
+				if (e instanceof ExecutionException) {
+					x = e.getCause();
+				}
+				if (attacher.isAlive()) {
+					attacher.interrupt();
+				}
+				LOGGER.info("Attach to (" + id + ") has failed: " + x.toString());
+				LOGGER.debug("Attach to (" + id + ") has failed", x);
+
+				return new Properties();
+			}
+		}    
+		
 		private class ProcessDetails implements JavaProcessDetails {
 			
 			private final long pid;
@@ -363,5 +424,155 @@ public class AttachManager {
 				this.value = value;
 			}
 	    }
+		
+		private class AttachRequest implements Runnable {
+			
+			final long pid;			
+			final List<VMTask<?>> tasks;
+			
+			public AttachRequest(long pid) {
+				this.pid = pid;
+				this.tasks = new ArrayList<VMTask<?>>();
+			}
+
+			@Override
+			public void run() {
+				VirtualMachine vm;
+				try {
+					try {
+						vm = VirtualMachine.attach(String.valueOf(pid));
+					}
+					catch(IOException e) {
+						// second try
+						vm = VirtualMachine.attach(String.valueOf(pid));
+					}
+					dispatch(vm);
+				} catch (Throwable e) {
+					fail(e);
+					return;
+				}
+				try {
+					vm.detach();
+				} catch (IOException e) {
+					// ignore
+				}
+			}
+
+			private void dispatch(VirtualMachine vm) {
+				while(true) {
+					VMTask<?> task;
+					synchronized(attachQueue) {
+						if (tasks.isEmpty()) {
+							attachQueue.remove(pid);
+							return;
+						}
+						else {
+							task = tasks.remove(0);
+						}
+					}
+					task.perform(vm);
+				}
+			}
+
+			private void fail(Throwable e) {
+				LOGGER.info("Attach to (" + pid + ") has failed: " + e.toString());
+				LOGGER.debug("Attach to (" + pid + ") has failed", e);
+				while(true) {
+					VMTask<?> task;
+					synchronized(attachQueue) {
+						if (tasks.isEmpty()) {
+							attachQueue.remove(pid);
+							return;
+						}
+						else {
+							task = tasks.remove(0);
+						}
+					}
+					task.fail(e);
+				}
+			}
+		}
+		
+		private static class FutureBox<V> extends FutureTask<V> {
+
+			private FutureBox(Callable<V> callable) {
+				super(callable);
+			}
+
+			@Override
+			public void setException(Throwable t) {
+				super.setException(t);
+			}
+		}
+		
+		private static class VMTask<V> {
+			
+			VirtualMachine vm;
+			VMAction<V> action;
+			FutureBox<V> box;
+			
+			public VMTask(VMAction<V> action) {
+				this.action = action;
+				this.box = new FutureBox<V>(new Callable<V>() {
+					@Override
+					public V call() throws Exception {
+						return VMTask.this.action.perform(vm);
+					}
+				});
+			}
+			
+			public void perform(VirtualMachine vm) {
+				this.vm = vm;
+				box.run();
+				this.vm = null;
+			}			
+
+			public void fail(Throwable e) {
+				box.setException(e);
+			}			
+		}
+		
+		private static interface VMAction<V> {
+
+			public V perform(VirtualMachine vm) throws Exception;
+		}
+		
+		private static class GetVmSysProps implements VMAction<Properties> {
+
+			@Override
+			public Properties perform(VirtualMachine vm) throws IOException {
+				return vm.getSystemProperties();
+			}
+		}
+
+		private static class GetManagementAgent implements VMAction<String> {
+			
+			@Override
+			public String perform(VirtualMachine vm) throws IOException, AgentLoadException, AgentInitializationException {
+		     	Properties localProperties = vm.getAgentProperties();
+		     	if (localProperties.containsKey("com.sun.management.jmxremote.localConnectorAddress")) {
+		     		return ((String)localProperties.get("com.sun.management.jmxremote.localConnectorAddress"));
+		     	}
+				
+				String jhome = vm.getSystemProperties().getProperty("java.home");
+			    Object localObject = jhome + File.separator + "jre" + File.separator + "lib" + File.separator + "management-agent.jar";
+			    File localFile = new File((String)localObject);
+			    
+			    if (!(localFile.exists())) {
+			       localObject = jhome + File.separator + "lib" + File.separator + "management-agent.jar";
+			 
+			       localFile = new File((String)localObject);
+			       if (!(localFile.exists())) {
+			    	   throw new IOException("Management agent not found"); 
+			       }
+			    }
+			 
+		     	localObject = localFile.getCanonicalPath();     	
+		 		vm.loadAgent((String)localObject, "com.sun.management.jmxremote");
+		 
+		     	localProperties = vm.getAgentProperties();
+		     	return ((String)localProperties.get("com.sun.management.jmxremote.localConnectorAddress"));
+			}
+		}
     }
 }
