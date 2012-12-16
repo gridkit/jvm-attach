@@ -84,6 +84,10 @@ public class AttachManager {
     public static MBeanServerConnection getJmxConnection(JavaProcessId jpid) {
     	return getJmxConnection(jpid.getPID());
     }
+    
+    public static void loadAgent(long pid, String agentPath, String agentArgs, long timeoutMs) throws Exception {
+        INSTANCE.internalLoadAgent(pid, agentPath, agentArgs, timeoutMs);
+    }
 
     static class AttachManagerInt {    	
     	
@@ -203,6 +207,22 @@ public class AttachManager {
 				
 			return proph.value;
 		}
+		
+		Properties internalGetAgentProperties(long pid) {
+		    return getAgentProps(pid);
+		}
+
+        void internalLoadAgent(long pid, String agentPath, String agentArgs, long timeoutMs) throws Exception {
+            try {
+                attachAndPerform(pid, new LoadAgent(agentPath, agentArgs), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
+            }  catch (ExecutionException e) {
+                if (e.getCause() instanceof AgentLoadException || e.getCause() instanceof AgentInitializationException) {
+                    throw new Exception(e.getCause().getMessage());
+                } else {
+                    throw e;
+                }
+            } 
+		}
 	
 		private MBeanServerConnection getMBeanServer(long pid) {
 			try {
@@ -251,6 +271,21 @@ public class AttachManager {
 				return new Properties();
 			}
 		}
+
+        private Properties getAgentProps(long pid) {
+            try {
+                return attachAndPerform(pid, new GetVmAgentProps(), ATTACH_TIMEOUT);
+            } catch (InterruptedException e) {
+                LOGGER.warn("Failed to read agent properties, JVM pid: " + pid + ", interrupted");
+                return new Properties();
+            } catch (ExecutionException e) {
+                LOGGER.info("Failed to read agent properties, JVM pid: " + pid + ", error: " + e.getCause().toString());
+                return new Properties();
+            } catch (TimeoutException e) {
+                LOGGER.info("Failed to read agent properties, JVM pid: " + pid + ", read timeout");
+                return new Properties();
+            }
+        }
 	
 		@SuppressWarnings("unused")
 		private static String attachManagementAgent(VirtualMachine vm) throws IOException, AgentLoadException, AgentInitializationException
@@ -408,6 +443,11 @@ public class AttachManager {
 				return internalGetSystemProperties(pid);
 			}
 			
+            @Override
+            public Properties getAgentProperties() {
+                return internalGetAgentProperties(pid);
+            }
+			
 			@Override
 			public MBeanServerConnection getMBeans() {
 				return internalGetJmxConnection(pid);
@@ -544,6 +584,14 @@ public class AttachManager {
 				return vm.getSystemProperties();
 			}
 		}
+		
+        private static class GetVmAgentProps implements VMAction<Properties> {
+
+            @Override
+            public Properties perform(VirtualMachine vm) throws IOException {
+                return vm.getAgentProperties();
+            }
+        }
 
 		private static class GetManagementAgent implements VMAction<String> {
 			
@@ -573,6 +621,22 @@ public class AttachManager {
 		     	localProperties = vm.getAgentProperties();
 		     	return ((String)localProperties.get("com.sun.management.jmxremote.localConnectorAddress"));
 			}
+		}
+		
+		private static class LoadAgent implements VMAction<Void> {
+		    private final String agentPath;
+		    private final String agentArgs; 
+
+            public LoadAgent(String agentPath, String agentArgs) {
+                this.agentPath = agentPath;
+                this.agentArgs = agentArgs;
+            }
+
+            @Override
+            public Void perform(VirtualMachine vm) throws Exception {
+                vm.loadAgent(agentPath, agentArgs);
+                return null;
+            }
 		}
     }
 }

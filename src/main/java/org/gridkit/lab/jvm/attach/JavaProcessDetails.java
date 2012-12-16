@@ -13,6 +13,8 @@ public interface JavaProcessDetails {
 	public JavaProcessId getJavaProcId();
 	
 	public Properties getSystemProperties();
+	
+	public Properties getAgentProperties();
 
 	public MBeanServerConnection getMBeans();
 
