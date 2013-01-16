@@ -47,6 +47,10 @@ public class AttachManager {
     	AttachAPI.ensureToolsJar();
     }
     
+    public static void ensureToolsJar() {
+    	// do nothing, just ensure call to static initializer
+    }
+    
     private static AttachManagerInt INSTANCE = new AttachManagerInt();
     
     private static ExecutorService threadPool = new ThreadPoolExecutor(0, Integer.MAX_VALUE, 500, TimeUnit.MILLISECONDS, new SynchronousQueue<Runnable>(), new ThreadFactory() {

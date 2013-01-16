@@ -1,6 +1,7 @@
 package org.gridkit.lab.jvm.attach;
 
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Collection;
 
 public interface JavaProcessMatcher {
@@ -32,6 +33,11 @@ public interface JavaProcessMatcher {
 				}
 			}
 			return false;
+		}
+		
+		@Override
+		public String toString() {
+			return "UNION" + Arrays.asList(matchers);
 		}
 	}
 }
