@@ -101,7 +101,7 @@ public class HeapHisto {
 	public String print(int top) {
 	    StringBuilder sb = new StringBuilder();
 	    int n = 0;
-	    for(Bucket b: histo.values()) {
+	    for(Bucket b: getBuckets()) {
 	    	if (++n > top) {
 	    		break;
 	    	}
