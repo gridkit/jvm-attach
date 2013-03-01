@@ -1,7 +1,10 @@
 package org.gridkit.lab.jvm.attach;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,6 +30,8 @@ import javax.management.remote.JMXServiceURL;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import sun.tools.attach.HotSpotVirtualMachine;
 
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
@@ -91,6 +96,10 @@ public class AttachManager {
     
     public static void loadAgent(long pid, String agentPath, String agentArgs, long timeoutMs) throws Exception {
         INSTANCE.internalLoadAgent(pid, agentPath, agentArgs, timeoutMs);
+    }
+
+    public static List<String> getHeapHisto(long pid, Object[] args, long timeoutMs) throws Exception {
+    	return INSTANCE.internalHeapHisto(pid, args, timeoutMs);
     }
 
     static class AttachManagerInt {    	
@@ -220,14 +229,40 @@ public class AttachManager {
             try {
                 attachAndPerform(pid, new LoadAgent(agentPath, agentArgs), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
             }  catch (ExecutionException e) {
-                if (e.getCause() instanceof AgentLoadException || e.getCause() instanceof AgentInitializationException) {
-                    throw new Exception(e.getCause().getMessage());
-                } else {
-                    throw e;
-                }
+        		if (isAttachException(e.getCause())) {
+        			throw new Exception(e.getCause().toString());
+        		} else {
+        			if (e.getCause() instanceof Exception) {
+        				throw (Exception)e.getCause();
+        			}
+        			else {
+        				throw e;
+        			}
+        		}
             } 
 		}
+
+        List<String> internalHeapHisto(long pid, Object[] args, long timeoutMs) throws Exception {
+        	try {
+        		return attachAndPerform(pid, new HeapHisto(args), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
+        	}  catch (ExecutionException e) {
+        		if (isAttachException(e.getCause())) {
+        			throw new Exception(e.getCause().toString());
+        		} else {
+        			if (e.getCause() instanceof Exception) {
+        				throw (Exception)e.getCause();
+        			}
+        			else {
+        				throw e;
+        			}
+        		}
+        	} 
+        }
 	
+        private boolean isAttachException(Throwable e) {
+        	return e.getClass().getName().startsWith("com.sun.tools.attach.");
+        }
+        
 		private MBeanServerConnection getMBeanServer(long pid) {
 			try {
 				String uri;
@@ -641,6 +676,27 @@ public class AttachManager {
                 vm.loadAgent(agentPath, agentArgs);
                 return null;
             }
+		}
+
+		private static class HeapHisto implements VMAction<List<String>> {
+
+			private final Object[] args; 
+			
+			public HeapHisto(Object[] args) {
+				this.args = args;
+			}
+			
+			@Override
+			public List<String> perform(VirtualMachine vm) throws Exception {
+				InputStream is = ((HotSpotVirtualMachine)vm).heapHisto(args);
+				List<String> result = new ArrayList<String>();
+				BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+				String line;
+				while(null != (line = reader.readLine())) {
+					result.add(line);
+				}
+				return result;
+			}
 		}
     }
 }
