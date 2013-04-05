@@ -7,8 +7,45 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import javax.management.RuntimeErrorException;
+
 public class HeapHisto {
 
+	public static HeapHisto getHistoDead(int pid, long timeoutMs) {
+		HeapHisto all = getHistoAll(pid, timeoutMs);
+		HeapHisto live = getHistoLive(pid, timeoutMs);
+		return subtract(all, live);
+	}
+
+	
+	public static HeapHisto getHistoLive(int pid, long timeoutMs) {
+		try {
+			String[] plive = { "-live" };
+	        List<String> hh = AttachManager.getHeapHisto(pid, plive, timeoutMs);
+	        return HeapHisto.parse(hh);
+		}
+		catch(RuntimeException e) {
+			throw e;			
+		}
+		catch(Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	public static HeapHisto getHistoAll(int pid, long timeoutMs) {
+		try {
+			String[] plive = { "-all" };
+			List<String> hh = AttachManager.getHeapHisto(pid, plive, timeoutMs);
+			return HeapHisto.parse(hh);
+		}
+		catch(RuntimeException e) {
+			throw e;			
+		}
+		catch(Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
 	private Map<String, Bucket> histo = new LinkedHashMap<String, Bucket>();
 	
 	public static HeapHisto parse(Iterable<String> text) {

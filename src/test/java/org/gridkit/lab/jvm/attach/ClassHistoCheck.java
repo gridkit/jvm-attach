@@ -62,11 +62,8 @@ public class ClassHistoCheck {
 
     @Test
     public void test_heap_histo_dead() throws Exception {
-    	String[] args = {"-dead"};
-    	List<String> histo = AttachManager.getHeapHisto(pid(), args, 10000);
-    	for(String line: histo) {
-    		System.out.println(line);
-    	}
+    	HeapHisto dead = HeapHisto.getHistoDead(8420, 30000);
+    	System.out.println(dead.print());
     }
 
 }
