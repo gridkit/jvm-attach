@@ -7,7 +7,7 @@ import java.net.URLClassLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class AttachAPI {
+class AttachAPI {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AttachManager.class);
     private static boolean started;

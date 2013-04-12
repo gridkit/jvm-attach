@@ -16,6 +16,8 @@ public interface JavaProcessDetails {
 	
 	public Properties getAgentProperties();
 
+	public String getVmFlag(String flag);
+	
 	public MBeanServerConnection getMBeans();
 
 }

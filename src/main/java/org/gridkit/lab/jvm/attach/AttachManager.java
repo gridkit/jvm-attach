@@ -5,6 +5,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -258,6 +260,23 @@ public class AttachManager {
         		}
         	} 
         }
+
+        String internalPrintFlag(long pid, String flag, long timeoutMs) throws Exception {
+        	try {
+        		return attachAndPerform(pid, new PrintVmFlag(flag), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
+        	}  catch (ExecutionException e) {
+        		if (isAttachException(e.getCause())) {
+        			throw new Exception(e.getCause().toString());
+        		} else {
+        			if (e.getCause() instanceof Exception) {
+        				throw (Exception)e.getCause();
+        			}
+        			else {
+        				throw e;
+        			}
+        		}
+        	} 
+        }
 	
         private boolean isAttachException(Throwable e) {
         	return e.getClass().getName().startsWith("com.sun.tools.attach.");
@@ -487,6 +506,18 @@ public class AttachManager {
                 return internalGetAgentProperties(pid);
             }
 			
+            /**
+             * Queries JVM for internal flag. Will return <code>null</code> if command is not supported.
+             */
+			@Override
+			public String getVmFlag(String flag) {
+				try {
+					return internalPrintFlag(pid, flag, 5 * ATTACH_TIMEOUT);
+				} catch (Exception e) {
+					return null;
+				}
+			}
+
 			@Override
 			public MBeanServerConnection getMBeans() {
 				return internalGetJmxConnection(pid);
@@ -630,6 +661,28 @@ public class AttachManager {
             public Properties perform(VirtualMachine vm) throws IOException {
                 return vm.getAgentProperties();
             }
+        }
+
+        private static class PrintVmFlag implements VMAction<String> {
+        	
+        	private String flag;
+        	
+        	public PrintVmFlag(String flag) {
+				this.flag = flag;
+			}
+
+			@Override
+        	public String perform(VirtualMachine vm) throws IOException {
+        		try {
+					Method m = vm.getClass().getMethod("printFlag", String.class);
+					m.setAccessible(true);
+					InputStream is = (InputStream) m.invoke(vm, flag);
+					BufferedReader br = new BufferedReader(new InputStreamReader(is));
+					return br.readLine();
+				} catch (Exception e) {
+					return null;
+				}
+        	}
         }
 
 		private static class GetManagementAgent implements VMAction<String> {
