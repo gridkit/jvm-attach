@@ -1,15 +1,30 @@
+/**
+ * Copyright 2013 Alexey Ragozin
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.gridkit.lab.jvm.attach;
 
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+/**
+ * @author Alexey Ragozin (alexey.ragozin@gmail.com)
+ */
 class AttachAPI {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AttachManager.class);
+    private static final LogStream LOG_ERROR = LogStream.error();
     private static boolean started;
 	
     static {
@@ -29,15 +44,15 @@ class AttachAPI {
             }
             
         } catch (Exception e) {
-        	LOGGER.error("Java home points to " + System.getProperty("java.home") + " make sure it is not a JRE path");
-        	LOGGER.error("Failed to add tools.jar to classpath", e);
+        	LOG_ERROR.log("Java home points to " + System.getProperty("java.home") + " make sure it is not a JRE path");
+        	LOG_ERROR.log("Failed to add tools.jar to classpath", e);
         }
         started = true;
     };
 	
 	public static void ensureToolsJar() {
 		if (!started) {
-			System.err.println("Attach API not initialized");
+			LOG_ERROR.log("Attach API not initialized");
 		}
 	}	
 }

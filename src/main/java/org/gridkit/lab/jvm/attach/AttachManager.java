@@ -1,3 +1,18 @@
+/**
+ * Copyright 2013 Alexey Ragozin
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.gridkit.lab.jvm.attach;
 
 import java.io.BufferedReader;
@@ -29,9 +44,6 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import sun.tools.attach.HotSpotVirtualMachine;
 
 import com.sun.tools.attach.AgentInitializationException;
@@ -40,9 +52,14 @@ import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 import com.sun.tools.attach.VirtualMachineDescriptor;
 
+/**
+ * @author Alexey Ragozin (alexey.ragozin@gmail.com)
+ */
 public class AttachManager {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AttachManager.class);
+    private static final LogStream LOG_WARN = LogStream.warn();
+    private static final LogStream LOG_INFO = LogStream.info();
+    private static final LogStream LOG_DEBUG = LogStream.debug();
 
     private static long ATTACH_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(500);
     private static long VM_LIST_EXPIRY = TimeUnit.SECONDS.toNanos(1);
@@ -186,7 +203,7 @@ public class AttachManager {
 					return Collections.emptyList();
 				}
 				catch(ExecutionException e) {
-					LOGGER.debug("Process filtering exception", e.getCause());
+					LOG_DEBUG.log("Process filtering exception", e.getCause());
 				}
 			}
 			
@@ -287,20 +304,20 @@ public class AttachManager {
 				try {
 					uri = attachAndPerform(pid, new GetManagementAgent(), ATTACH_TIMEOUT);
 				} catch (InterruptedException e) {
-					LOGGER.warn("Cannot connect to JVM (" + pid + ") - interrupted");
+					LOG_WARN.log("Cannot connect to JVM (" + pid + ") - interrupted");
 					return null;
 				} catch (ExecutionException e) {
 					Throwable cause = e.getCause();
 					if (cause instanceof AgentLoadException || cause instanceof AgentInitializationException) {
-						LOGGER.debug("Cannot connect to JVM (" + pid + "). Agent error: " + e.toString());
+						LOG_DEBUG.log("Cannot connect to JVM (" + pid + "). Agent error: " + e.toString());
 						return null;
 					}
 					else {
-						LOGGER.debug("Cannot connect to JVM (" + pid + ") - " + e.toString());
+						LOG_DEBUG.log("Cannot connect to JVM (" + pid + ") - " + e.toString());
 						return null;
 					}
 				} catch (TimeoutException e) {
-					LOGGER.debug("Cannot connect to JVM (" + pid + ") - timeout");
+					LOG_DEBUG.log("Cannot connect to JVM (" + pid + ") - timeout");
 					return null;
 				}
 	    		JMXServiceURL jmxurl = new JMXServiceURL(uri);
@@ -309,7 +326,7 @@ public class AttachManager {
 	    		return mserver;
 				
 			} catch (Exception e) {
-				LOGGER.debug("Cannot connect to JVM (" + pid + ") - " + e.toString());
+				LOG_DEBUG.log("Cannot connect to JVM (" + pid + ") - " + e.toString());
 				return null;
 			}
 		}
@@ -318,13 +335,13 @@ public class AttachManager {
 			try {
 				return attachAndPerform(pid, new GetVmSysProps(), ATTACH_TIMEOUT);
 			} catch (InterruptedException e) {
-				LOGGER.warn("Failed to read system properties, JVM pid: " + pid + ", interrupted");
+				LOG_WARN.log("Failed to read system properties, JVM pid: " + pid + ", interrupted");
 				return new Properties();
 			} catch (ExecutionException e) {
-				LOGGER.info("Failed to read system properties, JVM pid: " + pid + ", error: " + e.getCause().toString());
+				LOG_INFO.log("Failed to read system properties, JVM pid: " + pid + ", error: " + e.getCause().toString());
 				return new Properties();
 			} catch (TimeoutException e) {
-				LOGGER.info("Failed to read system properties, JVM pid: " + pid + ", read timeout");
+				LOG_INFO.log("Failed to read system properties, JVM pid: " + pid + ", read timeout");
 				return new Properties();
 			}
 		}
@@ -333,13 +350,13 @@ public class AttachManager {
             try {
                 return attachAndPerform(pid, new GetVmAgentProps(), ATTACH_TIMEOUT);
             } catch (InterruptedException e) {
-                LOGGER.warn("Failed to read agent properties, JVM pid: " + pid + ", interrupted");
+                LOG_WARN.log("Failed to read agent properties, JVM pid: " + pid + ", interrupted");
                 return new Properties();
             } catch (ExecutionException e) {
-                LOGGER.info("Failed to read agent properties, JVM pid: " + pid + ", error: " + e.getCause().toString());
+                LOG_INFO.log("Failed to read agent properties, JVM pid: " + pid + ", error: " + e.getCause().toString());
                 return new Properties();
             } catch (TimeoutException e) {
-                LOGGER.info("Failed to read agent properties, JVM pid: " + pid + ", read timeout");
+                LOG_INFO.log("Failed to read agent properties, JVM pid: " + pid + ", read timeout");
                 return new Properties();
             }
         }
@@ -463,8 +480,8 @@ public class AttachManager {
 				if (attacher.isAlive()) {
 					attacher.interrupt();
 				}
-				LOGGER.info("Attach to (" + id + ") has failed: " + x.toString());
-				LOGGER.debug("Attach to (" + id + ") has failed", x);
+				LOG_INFO.log("Attach to (" + id + ") has failed: " + x.toString());
+				LOG_DEBUG.log("Attach to (" + id + ") has failed", x);
 
 				return new Properties();
 			}
@@ -584,8 +601,8 @@ public class AttachManager {
 			}
 
 			private void fail(Throwable e) {
-				LOGGER.info("Attach to (" + pid + ") has failed: " + e.toString());
-				LOGGER.debug("Attach to (" + pid + ") has failed", e);
+				LOG_INFO.log("Attach to (" + pid + ") has failed: " + e.toString());
+				LOG_DEBUG.log("Attach to (" + pid + ") has failed", e);
 				while(true) {
 					VMTask<?> task;
 					synchronized(attachQueue) {

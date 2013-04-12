@@ -62,7 +62,7 @@ public class ClassHistoCheck {
 
     @Test
     public void test_heap_histo_dead() throws Exception {
-    	HeapHisto dead = HeapHisto.getHistoDead(8420, 30000);
+    	HeapHisto dead = HeapHisto.getHistoDead(pid(), 30000);
     	System.out.println(dead.print());
     }
 
