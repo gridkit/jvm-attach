@@ -9,7 +9,7 @@
     </parent>
     
     <artifactId>jvm-attach-api</artifactId>
-    <version>1.1-SNAPSHOT</version>        
+    <version>1.1</version>        
     <name>${project.groupId}::${project.artifactId}</name>
 
     <licenses>
@@ -29,9 +29,9 @@
     </developers>
 
     <scm>
-        <connection>scm:svn:http://gridkit.googlecode.com/svn/grid-lab/trunk/systools/jvm-attach-api</connection>
-        <developerConnection>scm:svn:https://gridkit.googlecode.com/svn/grid-lab/trunk/systools/jvm-attach-api</developerConnection>
-        <url>http://gridkit.googlecode.com/svn/grid-lab/trunk/systools/jvm-attach-api</url>
+        <connection>scm:svn:http://gridkit.googlecode.com/svn/grid-lab/tags/jvm-attach-api-1.1</connection>
+        <developerConnection>scm:svn:https://gridkit.googlecode.com/svn/grid-lab/tags/jvm-attach-api-1.1</developerConnection>
+        <url>http://gridkit.googlecode.com/svn/grid-lab/tags/jvm-attach-api-1.1</url>
     </scm>
 
     <properties>
