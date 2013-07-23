@@ -18,6 +18,7 @@ import sun.misc.Perf;
  * 
  * @author Alexey Ragozin (alexey.ragozin@gmail.com)
  */
+@SuppressWarnings("restriction")
 public abstract class JStatData {
 
 	public static JStatData connect(long pid) {
