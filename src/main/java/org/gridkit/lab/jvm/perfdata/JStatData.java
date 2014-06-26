@@ -98,7 +98,7 @@ public abstract class JStatData {
 
 		double getTick();
 
-		public long geNanos();
+		public long getNanos();
 		
 	}
 	
