@@ -292,7 +292,7 @@ public abstract class JStatData {
 			}
 
 			@Override
-			public long geNanos() {
+			public long getNanos() {
 				return (long)(tick * getLong());
 			}
 		}
