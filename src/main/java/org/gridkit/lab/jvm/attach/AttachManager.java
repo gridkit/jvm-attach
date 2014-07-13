@@ -20,6 +20,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.StringWriter;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -118,6 +120,15 @@ public class AttachManager {
 
     public static List<String> getHeapHisto(long pid, Object[] args, long timeoutMs) throws Exception {
     	return INSTANCE.internalHeapHisto(pid, args, timeoutMs);
+    }
+
+    /**
+     * Sends 'heapdump' command.
+     * 
+     * @return JVM diagnostic output
+     */
+    public static String getHeapDump(long pid, Object[] args, long timeoutMs) throws Exception {
+        return INSTANCE.internalHeapDump(pid, args, timeoutMs);
     }
 
     static class AttachManagerInt {    	
@@ -277,6 +288,23 @@ public class AttachManager {
         	} 
         }
 
+        String internalHeapDump(long pid, Object[] args, long timeoutMs) throws Exception {
+            try {
+                return attachAndPerform(pid, new HeapDump(args), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
+            }  catch (ExecutionException e) {
+                if (isAttachException(e.getCause())) {
+                    throw new Exception(e.getCause().toString());
+                } else {
+                    if (e.getCause() instanceof Exception) {
+                        throw (Exception)e.getCause();
+                    }
+                    else {
+                        throw e;
+                    }
+                }
+            } 
+        }        
+        
         String internalPrintFlag(long pid, String flag, long timeoutMs) throws Exception {
         	try {
         		return attachAndPerform(pid, new PrintVmFlag(flag), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
@@ -766,6 +794,41 @@ public class AttachManager {
 				}
 				return result;
 			}
+		}
+
+		private static class HeapDump implements VMAction<String> {
+		    
+		    private final Object[] args; 
+		    
+		    public HeapDump(Object[] args) {
+		        this.args = args;
+		    }
+		    
+		    @Override
+		    public String perform(VirtualMachine vm) throws Exception {
+		        StringWriter sw = new StringWriter();
+		        InputStream is = ((HotSpotVirtualMachine)vm).dumpHeap(args);
+		        try {
+    		        Reader r = new InputStreamReader(is);
+    		        char[] buf = new char[16 << 10];
+    		        while(true) {
+    		            int m = r.read(buf);
+    		            if (m < 0) {
+    		                break;
+    		            }
+    		            sw.write(buf, 0, m);
+    		        }
+    		        return sw.toString();
+		        }
+		        finally {
+		            try {
+		                is.close();
+		            }
+		            catch(IOException e) {
+		                // ignore
+		            }
+		        }
+		    }
 		}
     }
 }
