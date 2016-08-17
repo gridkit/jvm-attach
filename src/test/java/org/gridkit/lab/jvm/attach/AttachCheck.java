@@ -49,6 +49,5 @@ public class AttachCheck {
 			RuntimeMXBean runtime = JMX.newMXBeanProxy(AttachManager.getJmxConnection(jpid), ObjectName.getInstance(ManagementFactory.RUNTIME_MXBEAN_NAME), RuntimeMXBean.class);
 			System.out.println(runtime.getName());
 		}		
-	}
-	
+	}	
 }

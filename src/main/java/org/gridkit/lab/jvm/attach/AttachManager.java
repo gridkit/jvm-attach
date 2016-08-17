@@ -23,6 +23,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringWriter;
 import java.lang.reflect.Method;
+import java.nio.CharBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -129,6 +130,10 @@ public class AttachManager {
      */
     public static String getHeapDump(long pid, Object[] args, long timeoutMs) throws Exception {
         return INSTANCE.internalHeapDump(pid, args, timeoutMs);
+    }
+
+    public static void getThreadDump(long pid, Object[] args, Appendable output, long timeoutMs) throws Exception {
+        INSTANCE.internalThreadDump(pid, args, output, timeoutMs);
     }
 
     static class AttachManagerInt {    	
@@ -322,6 +327,24 @@ public class AttachManager {
         	} 
         }
 	
+        
+        void internalThreadDump(long pid, Object[] args, Appendable output, long timeoutMs) throws Exception {
+            try {
+                attachAndPerform(pid, new ThreadDump(args, output), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
+            }  catch (ExecutionException e) {
+                if (isAttachException(e.getCause())) {
+                    throw new Exception(e.getCause().toString());
+                } else {
+                    if (e.getCause() instanceof Exception) {
+                        throw (Exception)e.getCause();
+                    }
+                    else {
+                        throw e;
+                    }
+                }
+            }             
+        }
+        
         private boolean isAttachException(Throwable e) {
         	return e.getClass().getName().startsWith("com.sun.tools.attach.");
         }
@@ -830,5 +853,43 @@ public class AttachManager {
 		        }
 		    }
 		}
+
+        private static class ThreadDump implements VMAction<Void> {
+            
+            private final Object[] args; 
+            private final Appendable writer;
+            
+            public ThreadDump(Object[] args, Appendable writer) {
+                this.args = args;
+                this.writer = writer;
+            }
+            
+            @Override
+            public Void perform(VirtualMachine vm) throws Exception {
+                InputStream is = ((HotSpotVirtualMachine)vm).remoteDataDump(args);
+                try {
+                    Reader r = new InputStreamReader(is);
+                    CharBuffer cb = CharBuffer.allocate(16 << 10);
+                    while(true) {
+                        int m = r.read(cb.array());
+                        if (m < 0) {
+                            break;
+                        }
+                        cb.limit(m);
+                        writer.append(cb);
+                        cb.clear();
+                    }
+                    return null;
+                }
+                finally {
+                    try {
+                        is.close();
+                    }
+                    catch(IOException e) {
+                        // ignore
+                    }
+                }
+            }
+        }
     }
 }

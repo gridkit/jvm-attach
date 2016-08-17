@@ -237,7 +237,7 @@ public abstract class JStatData {
 
 			@Override
 			public String toString() {
-				return counter.toString();
+				return counter.toString().replace((char)0, ' ');
 			}
 		}
 		
@@ -256,8 +256,18 @@ public abstract class JStatData {
 
 			@Override
 			public String getString() {
-				return ((sun.management.counter.StringCounter)counter).stringValue();
+				return trim(((sun.management.counter.StringCounter)counter).stringValue());
 			}
+
+            private String trim(String value) {
+                int n = value.indexOf(0);
+                if (n >= 0) {
+                    return value.substring(0, n);
+                }
+                else {
+                    return value;
+                }
+            }
 		}
 
 		private static class LongWrapper extends CounterWrapper<Long> implements LongCounter {
