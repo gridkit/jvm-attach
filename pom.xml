@@ -29,9 +29,9 @@
     </developers>
 
     <scm>
-        <connection>scm:svn:http://gridkit.googlecode.com/svn/grid-lab/trunk/systools/jvm-attach-api</connection>
-        <developerConnection>scm:svn:https://gridkit.googlecode.com/svn/grid-lab/trunk/systools/jvm-attach-api</developerConnection>
-        <url>http://gridkit.googlecode.com/svn/grid-lab/trunk/systools/jvm-attach-api</url>
+      <connection>scm:git:https://github.com/gridkit/jvm-attach.git</connection>
+      <developerConnection>scm:git:https://github.com/gridkit/jvm-attach.git</developerConnection>
+      <url>https://github.com/gridkit/jvm-attach</url>
     </scm>
 
     <properties>
@@ -75,14 +75,13 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-release-plugin</artifactId>
-                <version>2.4</version>
-                <configuration>
-                    <autoVersionSubmodules>true</autoVersionSubmodules>
-                    <remoteTagging>false</remoteTagging>
-                    <suppressCommitBeforeTag>true</suppressCommitBeforeTag>
-                </configuration>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-release-plugin</artifactId>
+              <version>2.4</version>
+              <configuration>
+                <autoVersionSubmodules>true</autoVersionSubmodules>
+                <pushChanges>true</pushChanges>
+              </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
