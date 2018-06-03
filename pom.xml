@@ -58,15 +58,6 @@
     <dependencies>
 
         <dependency>
-            <groupId>com.sun</groupId>
-            <artifactId>tools</artifactId>
-            <version>1.6</version>
-            <scope>system</scope>
-            <systemPath>${java.home}/../lib/tools.jar</systemPath>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>1.6.6</version>
@@ -150,5 +141,45 @@
             </plugin>                
         </plugins>
     </build>
+
+    <profiles>
+      <profile>
+        <id>post_java9</id>
+        <activation>
+          <jdk>[1.9,)</jdk>
+        </activation>
+        <!-- no tools.jar required -->
+        <dependencies />
+        <build>
+          <plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-surefire-plugin</artifactId>
+              <configuration>
+                <argLine>--add-exports java.base/jdk.internal.perf=ALL-UNNAMED</argLine>
+              </configuration>
+            </plugin>
+          </plugins>
+        </build>
+      </profile>
+      <profile>
+        <id>tools_jar</id>
+        <activation>
+          <file>
+            <exists>${java.home}/../lib/tools.jar</exists>
+          </file>
+        </activation>
+        <dependencies>
+          <dependency>
+            <groupId>com.sun</groupId>
+            <artifactId>tools</artifactId>
+            <version>1.6</version>
+            <scope>system</scope>
+            <systemPath>${java.home}/../lib/tools.jar</systemPath>
+            <optional>true</optional>
+          </dependency>
+        </dependencies>
+      </profile>
+    </profiles>
 
 </project>

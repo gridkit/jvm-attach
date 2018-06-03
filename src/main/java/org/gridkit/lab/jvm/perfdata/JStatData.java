@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import sun.management.counter.perf.PerfInstrumentation;
-import sun.misc.Perf;
 
 /**
  * Wraps {@link PerfInstrumentation} class.
@@ -117,6 +116,20 @@ public abstract class JStatData {
 		
 	}
 	
+	private static PerfInstrumentation attach(int pid) throws IllegalArgumentException, IOException {
+		try {
+			ByteBuffer bb = sun.misc.Perf.getPerf().attach(pid, "r");
+			PerfInstrumentation instr = new PerfInstrumentation(bb);
+			return instr;
+		}
+		catch(NoClassDefFoundError e) {
+			// try JDK 9 package
+			ByteBuffer bb = jdk.internal.perf.Perf.getPerf().attach(pid, "r");
+			PerfInstrumentation instr = new PerfInstrumentation(bb);
+			return instr;			
+		}
+	}
+	
 	private static class PerfIntr extends JStatData {
 	
 		private static sun.management.counter.Units U_TICKS = sun.management.counter.Units.TICKS;
@@ -138,14 +151,12 @@ public abstract class JStatData {
 			VARIABILITY_MAP.put(sun.management.counter.Variability.MONOTONIC, Variability.MONOTONIC);
 			VARIABILITY_MAP.put(sun.management.counter.Variability.VARIABLE, Variability.VARIABLE);
 		}
-
 		
 		final PerfInstrumentation instr;
 		final double tick;
 		
 		public PerfIntr(int pid) throws IllegalArgumentException, IOException {
-			ByteBuffer bb = Perf.getPerf().attach(pid, "r");
-			instr = new PerfInstrumentation(bb);
+			instr = attach(pid);
 			long hz = ((sun.management.counter.LongCounter)instr.findByPattern("sun.os.hrt.frequency").get(0)).longValue();
 			tick = ((double)TimeUnit.SECONDS.toNanos(1)) / hz;
 		}

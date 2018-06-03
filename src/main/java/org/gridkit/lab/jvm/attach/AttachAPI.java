@@ -29,16 +29,26 @@ class AttachAPI {
 	
     static {
         try {
-            String javaHome = System.getProperty("java.home");
-            String toolsJarURL = "file:" + javaHome + "/../lib/tools.jar";
 
-            // Make addURL public
-            Method method = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
-            method.setAccessible(true);
-            
-            URLClassLoader sysloader = (URLClassLoader)ClassLoader.getSystemClassLoader();
-            if (sysloader.getResourceAsStream("/com/sun/tools/attach/VirtualMachine.class") == null) {
-            	method.invoke(sysloader, (Object) new URL(toolsJarURL));
+            if (ClassLoader.getSystemClassLoader() instanceof URLClassLoader) {
+            	// Try to add tools.jar into classpath
+                String javaHome = System.getProperty("java.home");
+                String toolsJarURL = "file:" + javaHome + "/../lib/tools.jar";
+
+            	// Make addURL public
+                Method method = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
+                method.setAccessible(true);
+            	
+            	URLClassLoader sysloader = (URLClassLoader)ClassLoader.getSystemClassLoader();
+	            if (sysloader.getResourceAsStream("/com/sun/tools/attach/VirtualMachine.class") == null) {
+	            	method.invoke(sysloader, (Object) new URL(toolsJarURL));
+		            Thread.currentThread().getContextClassLoader().loadClass("com.sun.tools.attach.VirtualMachine");
+		            Thread.currentThread().getContextClassLoader().loadClass("com.sun.tools.attach.AttachNotSupportedException");
+	            }
+            }
+            else {
+            	// is it Java 9 or above?
+            	// let's hope tools classes are already on classpath
 	            Thread.currentThread().getContextClassLoader().loadClass("com.sun.tools.attach.VirtualMachine");
 	            Thread.currentThread().getContextClassLoader().loadClass("com.sun.tools.attach.AttachNotSupportedException");
             }

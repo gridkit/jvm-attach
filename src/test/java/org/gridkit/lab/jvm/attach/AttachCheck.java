@@ -16,14 +16,6 @@ import org.junit.Test;
 public class AttachCheck {
 
 	@Test
-	public void list_vm() {
-		
-		for(JavaProcessId jpid: AttachManager.listJavaProcesses()) {
-			System.out.println(jpid);
-		}		
-	}
-
-	@Test
 	public void match_self_vm() {
 		
 		System.getProperties().put("test", "");
