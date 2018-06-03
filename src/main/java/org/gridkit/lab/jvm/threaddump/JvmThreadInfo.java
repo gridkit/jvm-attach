@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.gridkit.lab.jvm.attach;
+package org.gridkit.lab.jvm.threaddump;
 
 import java.lang.Thread.State;
 

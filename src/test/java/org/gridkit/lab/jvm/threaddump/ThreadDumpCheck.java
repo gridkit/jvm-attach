@@ -1,7 +1,8 @@
-package org.gridkit.lab.jvm.attach;
+package org.gridkit.lab.jvm.threaddump;
 
 import java.lang.management.ManagementFactory;
 
+import org.gridkit.lab.jvm.attach.AttachManager;
 import org.junit.Test;
 
 public class ThreadDumpCheck {
