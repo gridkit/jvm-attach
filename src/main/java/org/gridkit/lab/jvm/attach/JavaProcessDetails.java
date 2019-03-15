@@ -15,6 +15,7 @@
  */
 package org.gridkit.lab.jvm.attach;
 
+import java.io.OutputStream;
 import java.util.Properties;
 
 import javax.management.MBeanServerConnection;
@@ -36,6 +37,11 @@ public interface JavaProcessDetails {
 
 	public String getVmFlag(String flag);
 	
+	public void jcmd(String command, Appendable output);
+
+	public void sendAttachCommand(String command, Object[] args, OutputStream output, long timeoutMS);
+	
 	public MBeanServerConnection getMBeans();
+
 
 }

@@ -31,7 +31,7 @@ abstract class LogStream {
 			return Slf4JLogger.info(name);
 		}
 		catch(NoClassDefFoundError error) {
-			return SysErrLogger.info(name);
+			return SysLogger.info(name);
 		}
 	}
 
@@ -41,7 +41,7 @@ abstract class LogStream {
 			return Slf4JLogger.debug(name);
 		}
 		catch(NoClassDefFoundError error) {
-			return SysErrLogger.debug(name);
+			return SysLogger.debug(name);
 		}
 	}
 	
@@ -51,7 +51,7 @@ abstract class LogStream {
 			return Slf4JLogger.warn(name);
 		}
 		catch(NoClassDefFoundError error) {
-			return SysErrLogger.warn(name);
+			return SysLogger.warn(name);
 		}		
 	}
 
@@ -61,7 +61,7 @@ abstract class LogStream {
 			return Slf4JLogger.error(name);
 		}
 		catch(NoClassDefFoundError error) {
-			return SysErrLogger.error(name);
+			return SysLogger.error(name);
 		}		
 	}
 	

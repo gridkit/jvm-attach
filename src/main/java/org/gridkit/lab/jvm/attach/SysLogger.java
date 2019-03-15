@@ -15,50 +15,62 @@
  */
 package org.gridkit.lab.jvm.attach;
 
+import java.io.PrintStream;
 
 /**
+ * Fallback console logging.
  * @author Alexey Ragozin (alexey.ragozin@gmail.com)
  */
-class SysErrLogger {
-
-	private static LogStream SYS_ERR = new LogStream() {
-		@Override
-		public void log(String message) {
-			System.err.println(message);
-		}
-		
-		@Override
-		public void log(String message, Throwable error) {
-			System.err.println(message);
-			error.printStackTrace();
-		}
-	};
+public class SysLogger {
 	
-	private static LogStream NULL = new LogStream() {
-		@Override
-		public void log(String message) {
-			// do nothing
+	public static final SysLogStream DEBUG = new SysLogStream(null);
+	public static final SysLogStream INFO = new SysLogStream(null);
+	public static final SysLogStream WARN = new SysLogStream(System.err);
+	public static final SysLogStream ERROR = new SysLogStream(System.err);
+
+	public static class SysLogStream extends LogStream {
+		
+		private PrintStream target;
+
+		public SysLogStream(PrintStream target) {
+			this.target = target;
 		}
 		
+		public void setTarget(PrintStream ps) {
+			this.target = ps;
+		}
+
+		@Override
+		public void log(String message) {
+			if (target != null) {
+				target.println(message);
+			}			
+		}
+
 		@Override
 		public void log(String message, Throwable error) {
-			// do nothing
+			if (target != null) {
+				if (message.length() > 0) {
+					target.println(message);
+				}
+				error.printStackTrace(target);				
+			}			
 		}
-	};
+	}
 	
 	public static LogStream debug(String name) {
-		return NULL;
+		return DEBUG;
 	}
 
 	public static LogStream info(String name) {
-		return NULL;
+		return INFO;
 	}
 
 	public static LogStream warn(String name) {
-		return SYS_ERR;
+		return WARN;
 	}
 
 	public static LogStream error(String name) {
-		return SYS_ERR;
+		return ERROR;
 	}
 }

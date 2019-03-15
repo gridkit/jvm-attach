@@ -20,8 +20,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.CharBuffer;
 import java.util.ArrayList;
@@ -47,13 +49,13 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 
-import sun.tools.attach.HotSpotVirtualMachine;
-
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 import com.sun.tools.attach.VirtualMachineDescriptor;
+
+import sun.tools.attach.HotSpotVirtualMachine;
 
 /**
  * @author Alexey Ragozin (alexey.ragozin@gmail.com)
@@ -136,6 +138,55 @@ public class AttachManager {
         INSTANCE.internalThreadDump(pid, args, output, timeoutMs);
     }
 
+    private static void readString(InputStream stream, Appendable target) throws IOException {    	
+		try {
+			if (target == null) {
+				return;
+			}
+			Reader r = new InputStreamReader(stream);
+			CharBuffer cb = CharBuffer.allocate(16 << 10);
+			while(true) {
+				int m = r.read(cb.array());
+				if (m < 0) {
+					break;
+				}
+				cb.limit(m);
+				target.append(cb);
+				cb.clear();
+			}
+		}
+		finally {
+			try {
+				stream.close();
+			}
+			catch(IOException e) {
+				// ignore
+			}
+		}    	
+    }
+    
+	private static void copy(InputStream in, OutputStream out) throws IOException {
+		try {
+			byte[] buf = new byte[1 << 12];
+			while(true) {
+				int n = in.read(buf);
+				if(n >= 0) {
+					out.write(buf, 0, n);
+				}
+				else {
+					break;
+				}
+			}
+		} finally {
+			try {
+				in.close();
+			}
+			catch(Exception e) {
+				// ignore
+			}
+		}
+	}	
+    
     static class AttachManagerInt {    	
     	
 	    private List<VirtualMachineDescriptor> vmList;
@@ -326,7 +377,43 @@ public class AttachManager {
         		}
         	} 
         }
+
+        void internalJCmd(long pid, String command, Appendable output, long timeoutMs) throws Exception {
+        	try {
+        		attachAndPerform(pid, new JCmdCommand(command, output), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
+        	}  catch (ExecutionException e) {
+        		if (isAttachException(e.getCause())) {
+        			throw new Exception(e.getCause().toString());
+        		} else {
+        			if (e.getCause() instanceof Exception) {
+        				throw (Exception)e.getCause();
+        			}
+        			else {
+        				throw e;
+        			}
+        		}
+        	} 
+        }
 	
+        String internalSendAttachCommand(long pid, String command, Object[] args, OutputStream output, long timeoutMs) throws Exception {
+        	try {
+        		StringBuilder sb = new StringBuilder();
+        		attachAndPerform(pid, new GenericCommand(command, args, output), TimeUnit.MILLISECONDS.toNanos(timeoutMs));
+        		return sb.toString();
+        	}  catch (ExecutionException e) {
+        		if (isAttachException(e.getCause())) {
+        			throw new Exception(e.getCause().toString());
+        		} else {
+        			if (e.getCause() instanceof Exception) {
+        				throw (Exception)e.getCause();
+        			}
+        			else {
+        				throw e;
+        			}
+        		}
+        	} 
+        }
+        
         
         void internalThreadDump(long pid, Object[] args, Appendable output, long timeoutMs) throws Exception {
             try {
@@ -589,6 +676,32 @@ public class AttachManager {
 			public MBeanServerConnection getMBeans() {
 				return internalGetJmxConnection(pid);
 			}
+
+			@Override
+			public void jcmd(String command, Appendable result) {
+				try {
+					internalJCmd(pid, command, result, ATTACH_TIMEOUT);
+				}
+				catch(RuntimeException e) {
+					throw e;
+				}
+				catch(Exception e) {
+					throw new RuntimeException(e);
+				}
+			}
+
+			@Override
+			public void sendAttachCommand(String command, Object[] args, OutputStream output, long timeoutMS) {
+				try {
+					internalSendAttachCommand(pid, command, args, output, timeoutMS);
+				}
+				catch(RuntimeException e) {
+					throw e;
+				}
+				catch(Exception e) {
+					throw new RuntimeException(e);
+				}
+			}
 		}
 		
 		private static class Expirable<V> {
@@ -620,6 +733,7 @@ public class AttachManager {
 						vm = VirtualMachine.attach(String.valueOf(pid));
 					}
 					catch(IOException e) {
+						LogStream.debug().log("Attach attempt failed, would retry", e);
 						// second try
 						vm = VirtualMachine.attach(String.valueOf(pid));
 					}
@@ -693,7 +807,7 @@ public class AttachManager {
 				this.box = new FutureBox<V>(new Callable<V>() {
 					@Override
 					public V call() throws Exception {
-						return VMTask.this.action.perform(vm);
+						return VMTask.this.action.perform(new VMWarpper(vm));
 					}
 				});
 			}
@@ -711,13 +825,13 @@ public class AttachManager {
 		
 		private static interface VMAction<V> {
 
-			public V perform(VirtualMachine vm) throws Exception;
+			public V perform(VMWarpper vm) throws Exception;
 		}
 		
 		private static class GetVmSysProps implements VMAction<Properties> {
 
 			@Override
-			public Properties perform(VirtualMachine vm) throws IOException {
+			public Properties perform(VMWarpper vm) throws IOException {
 				return vm.getSystemProperties();
 			}
 		}
@@ -725,7 +839,7 @@ public class AttachManager {
         private static class GetVmAgentProps implements VMAction<Properties> {
 
             @Override
-            public Properties perform(VirtualMachine vm) throws IOException {
+            public Properties perform(VMWarpper vm) throws IOException {
                 return vm.getAgentProperties();
             }
         }
@@ -739,11 +853,9 @@ public class AttachManager {
 			}
 
 			@Override
-        	public String perform(VirtualMachine vm) throws IOException {
+        	public String perform(VMWarpper vm) throws IOException {
         		try {
-					Method m = vm.getClass().getMethod("printFlag", String.class);
-					m.setAccessible(true);
-					InputStream is = (InputStream) m.invoke(vm, flag);
+					InputStream is = vm.printFlag(flag);
 					BufferedReader br = new BufferedReader(new InputStreamReader(is));
 					return br.readLine();
 				} catch (Exception e) {
@@ -755,27 +867,48 @@ public class AttachManager {
 		private static class GetManagementAgent implements VMAction<String> {
 			
 			@Override
-			public String perform(VirtualMachine vm) throws IOException, AgentLoadException, AgentInitializationException {
+			public String perform(VMWarpper vm) throws IOException, AgentLoadException, AgentInitializationException {
 		     	Properties localProperties = vm.getAgentProperties();
 		     	if (localProperties.containsKey("com.sun.management.jmxremote.localConnectorAddress")) {
-		     		return ((String)localProperties.get("com.sun.management.jmxremote.localConnectorAddress"));
+		     		String jmxuri = (String)localProperties.get("com.sun.management.jmxremote.localConnectorAddress");
+		     		LOG_DEBUG.log("JMX agent already running: " + jmxuri);
+		     		return jmxuri;
 		     	}
 				
-				String jhome = vm.getSystemProperties().getProperty("java.home");
-			    Object localObject = jhome + File.separator + "jre" + File.separator + "lib" + File.separator + "management-agent.jar";
-			    File localFile = new File((String)localObject);
-			    
-			    if (!(localFile.exists())) {
-			       localObject = jhome + File.separator + "lib" + File.separator + "management-agent.jar";
-			 
-			       localFile = new File((String)localObject);
-			       if (!(localFile.exists())) {
-			    	   throw new IOException("Management agent not found"); 
-			       }
-			    }
-			 
-		     	localObject = localFile.getCanonicalPath();     	
-		 		vm.loadAgent((String)localObject, "com.sun.management.jmxremote");
+		     	if (vm.isJCmdSupported()) {
+		     		LOG_DEBUG.log("[" + vm.id() + "] try to start JMX via jcmd");
+		     		
+		     		try {
+						StringBuilder sb = new StringBuilder();
+						readString(vm.execJCmd("ManagementAgent.start_local"), sb);
+						if (sb.length() > 0) {
+							LOG_DEBUG.log("[" + vm.id() + "] ManagementAgent.start_local -> " + sb.toString());
+						}
+					} catch (Exception e) {
+						LOG_DEBUG.log("[" + vm.id() + "] Failed to exec ManagementAgent.start_local: " + e.toString());
+					}		     		
+		     	}
+		     	else {
+		     		LOG_DEBUG.log("[" + vm.id() + "] try to starn JMX via 'management-agent.jar'");
+		     	
+					String jhome = vm.getSystemProperties().getProperty("java.home");
+				    Object localObject = jhome + File.separator + "jre" + File.separator + "lib" + File.separator + "management-agent.jar";
+				    File localFile = new File((String)localObject);
+				    
+				    if (!(localFile.exists())) {
+				       localObject = jhome + File.separator + "lib" + File.separator + "management-agent.jar";
+				 
+				       localFile = new File((String)localObject);
+				       if (!(localFile.exists())) {
+				    	   LOG_DEBUG.log("Failed to find 'management-agent.jar' cannot start JMX agent");
+				    	   throw new IOException("Failed to find 'management-agent.jar' cannot start JMX agent"); 
+				       }
+				    }
+				 
+			     	localObject = localFile.getCanonicalPath();     	
+			     	LOG_DEBUG.log("[" + vm.id() + "] load agent form " + localObject);
+			 		vm.loadAgent((String)localObject, "com.sun.management.jmxremote");
+		     	}
 		 
 		     	localProperties = vm.getAgentProperties();
 		     	return ((String)localProperties.get("com.sun.management.jmxremote.localConnectorAddress"));
@@ -792,7 +925,7 @@ public class AttachManager {
             }
 
             @Override
-            public Void perform(VirtualMachine vm) throws Exception {
+            public Void perform(VMWarpper vm) throws Exception {
                 vm.loadAgent(agentPath, agentArgs);
                 return null;
             }
@@ -807,8 +940,8 @@ public class AttachManager {
 			}
 			
 			@Override
-			public List<String> perform(VirtualMachine vm) throws Exception {
-				InputStream is = ((HotSpotVirtualMachine)vm).heapHisto(args);
+			public List<String> perform(VMWarpper vm) throws Exception {
+				InputStream is = vm.heapHisto(args);
 				List<String> result = new ArrayList<String>();
 				BufferedReader reader = new BufferedReader(new InputStreamReader(is));
 				String line;
@@ -828,29 +961,10 @@ public class AttachManager {
 		    }
 		    
 		    @Override
-		    public String perform(VirtualMachine vm) throws Exception {
+		    public String perform(VMWarpper vm) throws Exception {
 		        StringWriter sw = new StringWriter();
-		        InputStream is = ((HotSpotVirtualMachine)vm).dumpHeap(args);
-		        try {
-    		        Reader r = new InputStreamReader(is);
-    		        char[] buf = new char[16 << 10];
-    		        while(true) {
-    		            int m = r.read(buf);
-    		            if (m < 0) {
-    		                break;
-    		            }
-    		            sw.write(buf, 0, m);
-    		        }
-    		        return sw.toString();
-		        }
-		        finally {
-		            try {
-		                is.close();
-		            }
-		            catch(IOException e) {
-		                // ignore
-		            }
-		        }
+		        readString(vm.dumpHeap(args), sw);
+		        return sw.toString();
 		    }
 		}
 
@@ -865,31 +979,191 @@ public class AttachManager {
             }
             
             @Override
-            public Void perform(VirtualMachine vm) throws Exception {
-                InputStream is = ((HotSpotVirtualMachine)vm).remoteDataDump(args);
-                try {
-                    Reader r = new InputStreamReader(is);
-                    CharBuffer cb = CharBuffer.allocate(16 << 10);
-                    while(true) {
-                        int m = r.read(cb.array());
-                        if (m < 0) {
-                            break;
-                        }
-                        cb.limit(m);
-                        writer.append(cb);
-                        cb.clear();
-                    }
-                    return null;
-                }
-                finally {
-                    try {
-                        is.close();
-                    }
-                    catch(IOException e) {
-                        // ignore
-                    }
-                }
+            public Void perform(VMWarpper vm) throws Exception {
+                readString(vm.remoteDataDump(args), writer);
+                return null;
             }
+        }
+
+        private static class JCmdCommand implements VMAction<Void> {
+        	
+        	private final String command; 
+        	private final Appendable writer;
+        	
+        	public JCmdCommand(String command, Appendable writer) {
+        		this.command = command;
+        		this.writer = writer;
+        	}
+        	
+        	@Override
+        	public Void perform(VMWarpper vm) throws Exception {
+        		if (!vm.isJCmdSupported()) {
+        			throw new NoSuchMethodException("jcmd is not supported for this VM");
+        		}
+        		readString(vm.execJCmd(command), writer);
+        		return null;
+        	}
+        }
+        
+        private static class GenericCommand implements VMAction<Void> {
+        	
+        	private final String command; 
+        	private final Object[] args; 
+        	private final OutputStream output;
+        	
+        	public GenericCommand(String command, Object[] args, OutputStream output) {
+        		this.command = command;
+        		this.args = args;
+        		this.output = output;
+        	}
+        	
+        	@Override
+        	public Void perform(VMWarpper vm) throws Exception {
+        		InputStream is = vm.execCommand(command, args);
+        		if (output != null) {
+        			copy(is, output);
+        		}
+        		else {
+        			try {
+						is.close();
+					} catch (Exception e) {
+						// ignore
+					}
+        		}
+        		return null;
+        	}
+        }
+        
+        public static class VMWarpper {
+        	
+        	private final VirtualMachine vm;
+        	
+        	public VMWarpper(VirtualMachine vm) {
+				this.vm = vm;
+			}
+
+//			public VirtualMachine unwarp() {
+//        		return vm;
+//        	}
+//
+			public String id() {
+				return vm.id();
+			}
+        	
+			public void loadAgent(String agent, String args) throws AgentLoadException, AgentInitializationException, IOException {
+				vm.loadAgent(agent, args);
+			}
+
+			public Properties getSystemProperties() throws IOException {
+				return vm.getSystemProperties();
+			}
+
+			public Properties getAgentProperties() throws IOException {
+				return vm.getAgentProperties();
+			}
+			
+			public InputStream remoteDataDump(Object... args) throws IOException {
+				return ((HotSpotVirtualMachine)vm).remoteDataDump(args);
+			}
+
+			public InputStream dumpHeap(Object... args) throws IOException {
+				return ((HotSpotVirtualMachine)vm).dumpHeap(args);
+			}
+
+			public InputStream heapHisto(Object... args) throws IOException {
+				return ((HotSpotVirtualMachine)vm).heapHisto(args);
+			}
+
+			public InputStream setFlag(String name, String value) throws IOException {
+				return ((HotSpotVirtualMachine)vm).setFlag(name, value);
+			}
+
+			public InputStream printFlag(String name) throws IOException {
+				return ((HotSpotVirtualMachine)vm).printFlag(name);
+			}
+
+			public boolean isJCmdSupported() {
+				return getExecuteJCmdMethod() != null;
+			}
+			
+			public InputStream execJCmd(String command) throws Exception {
+				try {
+					return (InputStream) getExecuteJCmdMethod().invoke(vm, command);
+				} catch (InvocationTargetException e) {
+					if (e.getTargetException() instanceof Exception) {
+						throw (Exception)e.getTargetException();
+					}
+					else {
+						throw new ExecutionException(e.getTargetException()); 
+					}
+				}
+			}
+
+			public InputStream execCommand(String command, Object[] args) throws Exception {
+				try {
+					return (InputStream) getExecuteCommand().invoke(vm, command, args);
+				} catch (InvocationTargetException e) {
+					if (e.getTargetException() instanceof Exception) {
+						throw (Exception)e.getTargetException();
+					}
+					else {
+						throw new ExecutionException(e.getTargetException()); 
+					}
+				}
+			}
+
+			private Method getExecuteJCmdMethod() {
+				Class<?> c = vm.getClass();
+				while(c != Object.class) {
+					try {
+						Method m = c.getDeclaredMethod("executeJCmd", String.class);
+						try {
+							m.setAccessible(true);
+							return m;
+						} catch (Exception e) {
+							LOG_DEBUG.log("Failed setAccessible on " + c.getSimpleName() + "." + m.getName(), e);
+						}
+					}
+					catch(NoSuchMethodException e) {
+					}					
+					c = c.getSuperclass();
+				}
+				return null;
+			}
+
+			private Method getExecuteCommand() {
+				Class<?> c = vm.getClass();
+				while(c != Object.class) {
+					try {
+						Method m = c.getDeclaredMethod("executeCommand", String.class, Object[].class);//c.getDeclaredMethods();
+						try {
+							m.setAccessible(true);
+							return m;
+						} catch (Exception e) {
+							LOG_DEBUG.log("Failed setAccessible on " + c.getSimpleName() + "." + m.getName(), e);
+						}
+					}
+					catch(NoSuchMethodException e) {
+					}					
+					c = c.getSuperclass();
+				}
+				c = vm.getClass();
+				while(c != Object.class) {
+					try {
+						Method m = c.getDeclaredMethod("execute", String.class, Object[].class);
+						try {
+							m.setAccessible(true);
+							return m;
+						} catch (Exception e) {
+							LOG_DEBUG.log("Failed setAccessible on " + c.getSimpleName() + "." + m.getName(), e);
+						}
+					}
+					catch(NoSuchMethodException e) {
+					}					
+					c = c.getSuperclass();
+				}
+				return null;
+			}			
         }
     }
 }
